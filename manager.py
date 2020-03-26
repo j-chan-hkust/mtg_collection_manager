@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import time
 from datetime import date
-
+from difflib import SequenceMatcher
 
 # walk through the file list in "new additions" directory
 # load the existing inventory list from the generated excel
@@ -20,6 +20,11 @@ from datetime import date
 # todo add low-quality images into the excel file
 
 
+# used to access string similarity
+def similar(a, b):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
 # queries scryfall and returns the result in a json, which in python is formatted as a dictionary
 def query_scryfall_for_json(card_name):
     return requests.get(
@@ -34,13 +39,14 @@ def filter_for_card_data(input_data, card_list):
     # todo at the moment - you have to perfectly input the set code, and doesn't handle this error for the user
     if 'Set' in input_data and len(input_data['Set']) != 0:
         for card in card_list:
-            if card['set'].upper() == input_data['Set'].upper().strip() and card['name'].upper() == input_data['Name'].upper():
+            if card['set'].upper() == input_data['Set'].upper().strip() \
+                    and similar(card['name'], input_data['Name']) > 0.9:
                 return card
     else:
         min = float('inf')
         temp = {}
         for card in card_list:
-            if card['prices']['usd'] is not None and card['name'].upper() == input_data['Name'].upper():
+            if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.9:
                 if float(card['prices']['usd']) < min:
                     min = float(card['prices']['usd'])
                     temp = card
