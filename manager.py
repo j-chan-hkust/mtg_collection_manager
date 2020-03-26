@@ -13,9 +13,6 @@ from difflib import SequenceMatcher
 # print out the file to an excel dock
 
 # todo add check for foiling
-# todo add check for name
-# todo handle formatting issues when writing to excel
-# todo if completely rewrites the excel file, need to fix that
 # todo convert price text to number
 # todo add low-quality images into the excel file
 
@@ -46,7 +43,7 @@ def filter_for_card_data(input_data, card_list):
         min = float('inf')
         temp = {}
         for card in card_list:
-            if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.9:
+            if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.85:
                 if float(card['prices']['usd']) < min:
                     min = float(card['prices']['usd'])
                     temp = card
