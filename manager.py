@@ -23,7 +23,7 @@ from datetime import date
 # queries scryfall and returns the result in a json, which in python is formatted as a dictionary
 def query_scryfall_for_json(card_name):
     return requests.get(
-        "https://api.scryfall.com/cards/search?q=\"" + card_name.replace(' ', '+') + "\"&unique=prints").json()
+        "https://api.scryfall.com/cards/search?q=" + card_name.replace(' ', '+') + "&unique=prints").json()
 
 
 # using the data from our input,
