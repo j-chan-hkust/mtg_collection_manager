@@ -4,6 +4,7 @@ import requests
 import time
 from datetime import date
 
+
 # walk through the file list in "new additions" directory
 # load the existing inventory list from the generated excel
 # combine existing inventory with new additions
@@ -11,21 +12,58 @@ from datetime import date
 # using the scryfall api
 # print out the file to an excel dock
 
-#todo add check for foiling
-#todo add check for
-#todo handle formatting issues when writing to excel
-#todo if completely rewrites the excel file, need to fix that
-#todo convert price text to number
-#todo shorter names will get the wrong similar longer names, e.g. berserk -> vulshok berserker
-#todo weird bug where sol ring and birds of paradise is picking up the foreign black border version
+# todo add check for foiling
+# todo add check for name
+# todo handle formatting issues when writing to excel
+# todo if completely rewrites the excel file, need to fix that
+# todo convert price text to number
+# todo weird bug where sol ring and birds of paradise is picking up the foreign black border version
+# todo add low-quality images into the excel file
 
 
+# queries scryfall and returns the result in a json, which in python is formatted as a dictionary
+def query_scryfall_for_json(card_name):
+    return requests.get(
+        "https://api.scryfall.com/cards/search?q=\"" + card_name.replace(' ', '+') + "\"&unique=prints").json()
 
 
-def main():
-    today = date.today()
-    fdate = date.today().strftime('%d/%m/%Y')
-    print('the date is: ' + fdate)
+# using the data from our input,
+# todo because which edition we get is contingent on information on the foiling,
+#  i think its best to perform filtering and data updating in a single step
+#  its too much of an interlinked process.
+def filter_for_card_data(input_data, card_list):
+    if 'Set' in input_data and len(input_data['Set']) != 0:
+        for card in card_list:
+            if card['set'].upper() == input_data['Set'].upper().strip() and card['name'].upper() == input_data['Name'].upper():
+                return card
+    else:
+        min = float('inf')
+        temp = {}
+        for card in card_list:
+            if card['prices']['usd'] is not None and card['name'].upper() == input_data['Name'].upper():
+                if float(card['prices']['usd']) < min:
+                    temp = card
+        return temp
+
+
+# adds relevant data to the card in question
+# THIS FUNCTION CHANGES THE DATA!
+def update_card_data(card_to_update, card_data_to_add, foil=False):
+    card_to_update['Set'] = card_data_to_add['set'].upper()
+    card_to_update['Price'] = card_data_to_add['prices']['usd']
+    card_to_update['Name'] = card_data_to_add['name']
+    card_to_update['last_accessed'] = date.today().strftime('%d/%m/%Y')
+
+
+# todo instead of concatenating to a dictionary, and then finally updating, we're going to be
+#   updating the excel file directly using an excel writer. This preserves formatting, and means
+#   we don't rewrite the original file. The issue I see is having to deal with a lot of finicky column
+#   management, that was previously automated by the pandas lib.
+def update_excel(excelWriter, card_data):
+    return None
+
+
+def manage():
 
     dfs = pd.read_excel('Full collection.xlsx', sheet_name=None)
     for df in dfs:
@@ -33,56 +71,40 @@ def main():
 
     # todo this will be an implementation of the specific case of full collection, I will make this generic in future
 
-    input_dict = dfs["FULL COLLECTION"].fillna('').to_dict('records') #this converts it into list of dictionaries
+    input_card_list = dfs["FULL COLLECTION"].fillna('').to_dict('records')  # this converts it into list of dictionaries
 
-    output_dicts = []
+    output_card_list = []
 
-    for dict_entry in input_dict:
-        print("getting... " + dict_entry["Name"])
+    for input_card in input_card_list:
+        print("getting... " + input_card["Name"])
         start = time.time()
 
         # get list of all editions from scryfall
-        response = requests.get("https://api.scryfall.com/cards/search?q=" + dict_entry["Name"].replace(' ', '+') + "&unique=prints").json()
+        response_json = query_scryfall_for_json(input_card["Name"])
 
-        if response['object'] == 'error':
-            print("uh oh, you made a typo for card " + dict_entry["Name"] + ", and we can't find it!")
-            output_dicts.append(dict_entry)
+        if response_json['object'] == 'error':
+            print("uh oh, you made a typo for card " + input_card["Name"] + ", and we can't find it!")
+            print("we've left the card as is...")
+            output_card_list.append(input_card)
             continue
 
-        response_data = response['data']
+        card_response_data = response_json['data']
 
-        # we care about name, set, set_name, price, date we accessed.
+        card_data = filter_for_card_data(input_card, card_response_data)
 
-        # this section here helps us to extract the appropriate printing
-        card_data = {} #this stores the card data that matches the version we want
-        if 'Set' in dict_entry and len(dict_entry['Set']) != 0:
-            for dict in response_data:
-                if dict['set'].upper() == dict_entry['Set'].upper().strip():
-                    card_data = dict
-                    break
-        else:
-            min = float('inf')
-            for dict in response_data:
-                if dict['prices']['usd'] is not None:
-                    if float(dict['prices']['usd']) < min:
-                        card_data = dict
+        update_card_data(input_card, card_data)
 
-        dict_entry['Set'] = card_data['set'].upper()
-        dict_entry['Price'] = card_data['prices']['usd']
-        dict_entry['Name'] = card_data['name']
-        dict_entry['last_accessed'] = fdate
+        print(input_card)
 
-        print(dict_entry)
+        # todo i don't think output is even needed now lol, output_card_list should = input_list
+        output_card_list.append(input_card)
 
-        output_dicts.append(dict_entry)
-
+        # todo query can be made more efficient
         print("time taken for this query is (in ms):")
         print(time.time() - start)
 
-
-    pd.DataFrame(output_dicts).to_excel("Full collection.xlsx", sheet_name="FULL COLLECTION")
-
+    pd.DataFrame(output_card_list).to_excel("Full collection.xlsx", sheet_name="FULL COLLECTION")
 
 
 if __name__ == "__main__":
-    main()
+    manage()
