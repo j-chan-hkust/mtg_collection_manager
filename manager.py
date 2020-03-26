@@ -17,7 +17,6 @@ from datetime import date
 # todo handle formatting issues when writing to excel
 # todo if completely rewrites the excel file, need to fix that
 # todo convert price text to number
-# todo weird bug where sol ring and birds of paradise is picking up the foreign black border version
 # todo add low-quality images into the excel file
 
 
@@ -32,6 +31,7 @@ def query_scryfall_for_json(card_name):
 #  i think its best to perform filtering and data updating in a single step
 #  its too much of an interlinked process.
 def filter_for_card_data(input_data, card_list):
+    # todo at the moment - you have to perfectly input the set code, and doesn't handle this error for the user
     if 'Set' in input_data and len(input_data['Set']) != 0:
         for card in card_list:
             if card['set'].upper() == input_data['Set'].upper().strip() and card['name'].upper() == input_data['Name'].upper():
@@ -42,6 +42,7 @@ def filter_for_card_data(input_data, card_list):
         for card in card_list:
             if card['prices']['usd'] is not None and card['name'].upper() == input_data['Name'].upper():
                 if float(card['prices']['usd']) < min:
+                    min = float(card['prices']['usd'])
                     temp = card
         return temp
 
