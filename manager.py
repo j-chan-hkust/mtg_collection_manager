@@ -12,9 +12,12 @@ from difflib import SequenceMatcher
 # using the scryfall api
 # print out the file to an excel dock
 
-# todo add check for foiling
+# todo add check for foil
 # todo convert price text to number
 # todo add low-quality images into the excel file
+# todo still very slow... while this ensures it doesn't break scryfalls fair use,
+#  it would be good to reduce time for these queries using threadpool
+# todo date for last_accessed, so we can skip excessive queries
 
 
 # used to access string similarity
@@ -28,35 +31,53 @@ def query_scryfall_for_json(card_name):
         "https://api.scryfall.com/cards/search?q=" + card_name.replace(' ', '+') + "&unique=prints").json()
 
 
-# using the data from our input,
-# todo because which edition we get is contingent on information on the foiling,
-#  i think its best to perform filtering and data updating in a single step
-#  its too much of an interlinked process.
-def filter_for_card_data(input_data, card_list):
-    # todo at the moment - you have to perfectly input the set code, and doesn't handle this error for the user
+# filter card_list for correct data to append to input_data
+def filter_correct_card_data(input_data, card_list, foil=False):
     if 'Set' in input_data and len(input_data['Set']) != 0:
         for card in card_list:
             if card['set'].upper() == input_data['Set'].upper().strip() \
                     and similar(card['name'], input_data['Name']) > 0.9:
                 return card
-    else:
-        min = float('inf')
-        temp = {}
-        for card in card_list:
-            if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.85:
-                if float(card['prices']['usd']) < min:
-                    min = float(card['prices']['usd'])
-                    temp = card
-        return temp
+        print("Your set code has a spelling error: " + input_data["Set"])
+        print("defaulting to lowest price version")
+
+    minimum = float('inf')
+    curr_min = {}
+    for card in card_list:
+        if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.85:
+            if foil:
+                if float(card['prices']['usd_foil']) < minimum:
+                    minimum = float(card['prices']['usd_foil'])
+                    curr_min = card
+            else:
+                if float(card['prices']['usd']) < minimum:
+                    minimum = float(card['prices']['usd'])
+                    curr_min = card
+    return curr_min
 
 
 # adds relevant data to the card in question
 # THIS FUNCTION CHANGES THE DATA!
 def update_card_data(card_to_update, card_data_to_add, foil=False):
     card_to_update['Set'] = card_data_to_add['set'].upper()
-    card_to_update['Price'] = card_data_to_add['prices']['usd']
+    if foil:
+        card_to_update['Price'] = card_data_to_add['prices']['usd_foil']
+    else:
+        card_to_update['Price'] = card_data_to_add['prices']['usd']
     card_to_update['Name'] = card_data_to_add['name']
     card_to_update['last_accessed'] = date.today().strftime('%d/%m/%Y')
+
+
+def parse_foiling(text):
+    return text.lower() in ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+
+
+# THIS FUNCTION EXPLICITLY CHANGES INPUT_DATA
+def process_response_data(input_data, response_data):
+    # todo should probably think about what a base file looks like, or think about what preprocessing should be
+    #  done to make the code more generalized
+    card_data = filter_correct_card_data(input_data, response_data, parse_foiling(input_data['Foil?']))
+    update_card_data(input_data, card_data, parse_foiling(input_data['Foil?']))
 
 
 # todo instead of concatenating to a dictionary, and then finally updating, we're going to be
@@ -74,10 +95,10 @@ def manage():
         print(dfs[df].head())
 
     # todo this will be an implementation of the specific case of full collection, I will make this generic in future
-
     input_card_list = dfs["FULL COLLECTION"].fillna('').to_dict('records')  # this converts it into list of dictionaries
-
     output_card_list = []
+
+    writer = pd.ExcelWriter('Full collection.xlsx', engine='xlsxwriter')
 
     for input_card in input_card_list:
         print("getting... " + input_card["Name"])
@@ -92,11 +113,7 @@ def manage():
             output_card_list.append(input_card)
             continue
 
-        card_response_data = response_json['data']
-
-        card_data = filter_for_card_data(input_card, card_response_data)
-
-        update_card_data(input_card, card_data)
+        process_response_data(input_card, response_json["data"])
 
         print(input_card)
 
@@ -107,7 +124,7 @@ def manage():
         print("time taken for this query is (in ms):")
         print(time.time() - start)
 
-    pd.DataFrame(output_card_list).to_excel("Full collection.xlsx", sheet_name="FULL COLLECTION")
+    pd.DataFrame(output_card_list).to_excel(writer, sheet_name="FULL COLLECTION")
 
 
 if __name__ == "__main__":
