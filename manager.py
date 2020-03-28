@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import time
 from datetime import date
+from datetime import datetime as dt
 from difflib import SequenceMatcher
 
 # walk through the file list in "new additions" directory
@@ -12,12 +13,12 @@ from difflib import SequenceMatcher
 # using the scryfall api
 # print out the file to an excel dock
 
-# todo add check for foil
 # todo convert price text to number
 # todo add low-quality images into the excel file
 # todo still very slow... while this ensures it doesn't break scryfalls fair use,
 #  it would be good to reduce time for these queries using threadpool
 # todo date for last_accessed, so we can skip excessive queries
+# todo add auto-formatting of the excel doc
 
 
 # used to access string similarity
@@ -46,13 +47,15 @@ def filter_correct_card_data(input_data, card_list, foil=False):
     for card in card_list:
         if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.85:
             if foil:
-                if float(card['prices']['usd_foil']) < minimum:
-                    minimum = float(card['prices']['usd_foil'])
-                    curr_min = card
+                if card['prices']['usd_foil'] is not None:
+                    if float(card['prices']['usd_foil']) < minimum:
+                        minimum = float(card['prices']['usd_foil'])
+                        curr_min = card
             else:
-                if float(card['prices']['usd']) < minimum:
-                    minimum = float(card['prices']['usd'])
-                    curr_min = card
+                if card['prices']['usd'] is not None:
+                    if float(card['prices']['usd']) < minimum:
+                        minimum = float(card['prices']['usd'])
+                        curr_min = card
     return curr_min
 
 
@@ -76,6 +79,18 @@ def parse_foiling(text):
 def process_response_data(input_data, response_data):
     # todo should probably think about what a base file looks like, or think about what preprocessing should be
     #  done to make the code more generalized
+
+    if input_data['last_accessed'] is not None:
+        if len(input_data['last_accessed']) is not 0:
+            try:
+                last_accessed = dt.strptime(input_data['last_accessed'], "%d/%m/%Y")
+                delta = date.today()-last_accessed.date()
+                if delta.days < 14:
+                    return
+            except ValueError:  # sometimes the datestring might not be correct!
+                print("there's something wrong with the date recorded in last_accessed:")
+                print(input_data['last_accessed'] + " is not parsable!")
+
     card_data = filter_correct_card_data(input_data, response_data, parse_foiling(input_data['Foil?']))
     update_card_data(input_data, card_data, parse_foiling(input_data['Foil?']))
 
@@ -100,6 +115,8 @@ def manage():
 
     writer = pd.ExcelWriter('Full collection.xlsx', engine='xlsxwriter')
 
+    # todo looping through the rows is REALLLLY SLOW, it shouldn't be this slow to iterate through the loops
+    #   figure out how to make this all work with itterows
     for input_card in input_card_list:
         print("getting... " + input_card["Name"])
         start = time.time()
@@ -125,6 +142,8 @@ def manage():
         print(time.time() - start)
 
     pd.DataFrame(output_card_list).to_excel(writer, sheet_name="FULL COLLECTION")
+
+    writer.save()
 
 
 if __name__ == "__main__":
