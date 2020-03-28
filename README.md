@@ -9,3 +9,12 @@ This project makes use of the scryfall api to slowly populate the data fields in
 Collections with 100k cards will take an hour and 40 minutes to run, for instance.
 
 I might write this in clojure too, who knows.
+
+# How to use
+To use the app, write down your collection like the file in "Example Input.xlsx"
+
+Download python3, and run the line: 
+
+manager.py -f 'path to file.xlsx'
+
+It will then organize your collection to look like "Example Output.xlsx"

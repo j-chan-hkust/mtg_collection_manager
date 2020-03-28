@@ -4,6 +4,7 @@ from datetime import date
 from datetime import datetime as dt
 from difflib import SequenceMatcher
 
+import argparse
 import pandas as pd
 import requests
 
@@ -127,9 +128,9 @@ def auto_fit_col_width(filename):
     writer.save()
 
 
-def manage():
-    dfs = pd.read_excel('Full collection.xlsx', sheet_name=None)
-    writer = pd.ExcelWriter('Full collection.xlsx', engine='xlsxwriter')
+def manage(filename):
+    dfs = pd.read_excel(filename, sheet_name=None)
+    writer = pd.ExcelWriter(filename, engine='xlsxwriter')
 
     full_collection_list = []
 
@@ -183,4 +184,12 @@ def manage():
 
 
 if __name__ == "__main__":
-    manage()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--filename", help='filename', required=False)
+    args = parser.parse_args()
+
+    if 'filename' not in args:
+        print('input a file name!')
+    else:
+        manage(args.filename)
