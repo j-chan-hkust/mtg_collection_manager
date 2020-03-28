@@ -1,10 +1,12 @@
-import os
 import pandas as pd
-import requests
 import time
 from datetime import date
 from datetime import datetime as dt
 from difflib import SequenceMatcher
+
+import pandas as pd
+import requests
+
 
 # walk through the file list in "new additions" directory
 # load the existing inventory list from the generated excel
@@ -13,12 +15,19 @@ from difflib import SequenceMatcher
 # using the scryfall api
 # print out the file to an excel dock
 
-# todo convert price text to number
-# todo add low-quality images into the excel file
+# todo add gui component that makes this applet more functional
+# todo load images into gui component
+
+
 # todo still very slow... while this ensures it doesn't break scryfalls fair use,
 #  it would be good to reduce time for these queries using threadpool
-# todo date for last_accessed, so we can skip excessive queries
-# todo add auto-formatting of the excel doc
+
+# todo I should have done proper preprocessing first, instead of doing a ton of error handling
+
+# todo Handle Shared case.
+
+# todo instead of having a "full collection" that we must parse, instead, concatenate everything in the sublist,
+#   except for the stuff marked Shared,
 
 
 # used to access string similarity
@@ -64,14 +73,20 @@ def filter_correct_card_data(input_data, card_list, foil=False):
 def update_card_data(card_to_update, card_data_to_add, foil=False):
     card_to_update['Set'] = card_data_to_add['set'].upper()
     if foil:
-        card_to_update['Price'] = card_data_to_add['prices']['usd_foil']
+        card_to_update['Price'] = float(card_data_to_add['prices']['usd_foil'])
     else:
-        card_to_update['Price'] = card_data_to_add['prices']['usd']
+        card_to_update['Price'] = float(card_data_to_add['prices']['usd'])
     card_to_update['Name'] = card_data_to_add['name']
     card_to_update['last_accessed'] = date.today().strftime('%d/%m/%Y')
 
+    # todo haven't decided whether I want to keep this data yet
+    # card_to_update['Foil?'] = foil # i think it makes it look really messy
+    # if card_to_update["Count"] == float("nan"):
+    #     card_to_update["Count"] = 1
 
-def parse_foiling(text):
+
+# todo add error handling here
+def parse_true(text):
     return text.lower() in ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
 
 
@@ -80,7 +95,7 @@ def process_response_data(input_data, response_data):
     # todo should probably think about what a base file looks like, or think about what preprocessing should be
     #  done to make the code more generalized
 
-    if input_data['last_accessed'] is not None:
+    if 'last_accessed'in input_data:
         if len(input_data['last_accessed']) is not 0:
             try:
                 last_accessed = dt.strptime(input_data['last_accessed'], "%d/%m/%Y")
@@ -91,59 +106,80 @@ def process_response_data(input_data, response_data):
                 print("there's something wrong with the date recorded in last_accessed:")
                 print(input_data['last_accessed'] + " is not parsable!")
 
-    card_data = filter_correct_card_data(input_data, response_data, parse_foiling(input_data['Foil?']))
-    update_card_data(input_data, card_data, parse_foiling(input_data['Foil?']))
+    card_data = filter_correct_card_data(input_data, response_data, parse_true(input_data['Foil?']))
+    update_card_data(input_data, card_data, parse_true(input_data['Foil?']))
 
 
-# todo instead of concatenating to a dictionary, and then finally updating, we're going to be
-#   updating the excel file directly using an excel writer. This preserves formatting, and means
-#   we don't rewrite the original file. The issue I see is having to deal with a lot of finicky column
-#   management, that was previously automated by the pandas lib.
-def update_excel(excelWriter, card_data):
-    return None
+# very lazy implementation, I have no idea how it works
+def auto_fit_col_width(filename):
+    dfs = pd.read_excel(filename, sheet_name=None)
+    writer = pd.ExcelWriter(filename, engine='xlsxwriter')
+    for sheetname, df in dfs.items():  # loop through `dict` of dataframes
+        df.to_excel(writer, sheet_name=sheetname, index=False)  # send df to writer
+        worksheet = writer.sheets[sheetname]  # pull worksheet object
+        for idx, col in enumerate(df):  # loop through all columns
+            series = df[col]
+            max_len = max((
+                series.astype(str).map(len).max(),  # len of largest item
+                len(str(series.name))  # len of column name/header
+            )) + 1  # adding a little extra space
+            worksheet.set_column(idx, idx, max_len)  # set column width
+    writer.save()
 
 
 def manage():
-
     dfs = pd.read_excel('Full collection.xlsx', sheet_name=None)
-    for df in dfs:
-        print(dfs[df].head())
-
-    # todo this will be an implementation of the specific case of full collection, I will make this generic in future
-    input_card_list = dfs["FULL COLLECTION"].fillna('').to_dict('records')  # this converts it into list of dictionaries
-    output_card_list = []
-
     writer = pd.ExcelWriter('Full collection.xlsx', engine='xlsxwriter')
 
-    # todo looping through the rows is REALLLLY SLOW, it shouldn't be this slow to iterate through the loops
-    #   figure out how to make this all work with itterows
-    for input_card in input_card_list:
-        print("getting... " + input_card["Name"])
-        start = time.time()
+    full_collection_list = []
 
-        # get list of all editions from scryfall
-        response_json = query_scryfall_for_json(input_card["Name"])
-
-        if response_json['object'] == 'error':
-            print("uh oh, you made a typo for card " + input_card["Name"] + ", and we can't find it!")
-            print("we've left the card as is...")
-            output_card_list.append(input_card)
+    for df in dfs:
+        if df == "Full Collection":
             continue
 
-        process_response_data(input_card, response_json["data"])
+        print(dfs[df].head())
 
-        print(input_card)
+        # todo this will be an implementation of the specific case of full collection, I will make this generic in future
+        input_card_df = dfs[df].fillna('')  # this converts it into list of dictionaries
+        output_card_list = []
 
-        # todo i don't think output is even needed now lol, output_card_list should = input_list
-        output_card_list.append(input_card)
+        # todo turns out is not thaat slow, a query takes around 1.40s still, there is a lot of room to optimize
+        for index, row in input_card_df.iterrows():
+            input_card = row.to_dict()
 
-        # todo query can be made more efficient
-        print("time taken for this query is (in ms):")
-        print(time.time() - start)
+            print("getting... " + input_card["Name"])
+            start = time.time()
 
-    pd.DataFrame(output_card_list).to_excel(writer, sheet_name="FULL COLLECTION")
+            # get list of all editions from scryfall
+            response_json = query_scryfall_for_json(input_card["Name"])
+
+            if response_json['object'] == 'error':
+                print("uh oh, you made a typo for card " + input_card["Name"] + ", and we can't find it!")
+                print("we've left the card as is...")
+                output_card_list.append(input_card)
+                continue
+
+            process_response_data(input_card, response_json["data"])
+
+            print(input_card)
+
+            # todo may need to cleanup, there's a lot of repeated effort here tbh.
+            output_card_list.append(input_card)
+            if not parse_true(input_card["Shared?"]):
+                full_collection_list.append(input_card)
+
+            print("time taken for this query is (in ms):")
+            print(time.time() - start)
+
+        pd.DataFrame(output_card_list).to_excel(writer, sheet_name=df, index=False)
+
+
+
+    pd.DataFrame(full_collection_list).to_excel(writer, sheet_name="Full Collection", index=False)
 
     writer.save()
+
+    auto_fit_col_width("Full collection.xlsx")
 
 
 if __name__ == "__main__":
