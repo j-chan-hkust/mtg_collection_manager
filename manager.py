@@ -25,15 +25,16 @@ import requests
 
 # todo I should have done proper preprocessing first, instead of doing a ton of error handling
 
-# todo Handle Shared case.
+# todo add a verbose mode
 
-# todo instead of having a "full collection" that we must parse, instead, concatenate everything in the sublist,
-#   except for the stuff marked Shared,
-
-
-# used to access string similarity
+# used to check if 2 card names are similar.
+# honestly, there isnt a great way to handle the edge case of dual faced cards, and there might be a lot of
+# issues with this implementation but whatever
 def similar(a, b):
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    if '//' in a or '//' in b:
+        return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.3
+    else:
+        return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.85
 
 
 # queries scryfall and returns the result in a json, which in python is formatted as a dictionary
@@ -47,15 +48,15 @@ def filter_correct_card_data(input_data, card_list, foil=False):
     if 'Set' in input_data and len(input_data['Set']) != 0:
         for card in card_list:
             if card['set'].upper() == input_data['Set'].upper().strip() \
-                    and similar(card['name'], input_data['Name']) > 0.9:
+                    and similar(card['name'], input_data['Name']):
                 return card
         print("Your set code has a spelling error: " + input_data["Set"])
         print("defaulting to lowest price version")
 
     minimum = float('inf')
-    curr_min = {}
+    curr_min = input_data
     for card in card_list:
-        if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']) > 0.85:
+        if card['prices']['usd'] is not None and similar(card['name'], input_data['Name']):
             if foil:
                 if card['prices']['usd_foil'] is not None:
                     if float(card['prices']['usd_foil']) < minimum:
@@ -88,7 +89,27 @@ def update_card_data(card_to_update, card_data_to_add, foil=False):
 
 # todo add error handling here
 def parse_true(text):
-    return text.lower() in ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+    if type(text) is str:
+        return text.lower() in ['true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+    else:
+        print("error in parse_true, returning false")
+        return False
+
+
+def skip_because_recently_accessed(input_data):
+    if 'last_accessed' in input_data:
+        if len(input_data['last_accessed']) is not 0:
+            try:
+                last_accessed = dt.strptime(input_data['last_accessed'], "%d/%m/%Y")
+                delta = date.today()-last_accessed.date()
+                if delta.days < 14:
+                    return True
+            except ValueError:  # sometimes the datestring might not be correct!
+                print("there's something wrong with the date recorded in last_accessed:")
+                print(input_data['last_accessed'] + " is not parsable!")
+                return False
+
+    return False
 
 
 # THIS FUNCTION EXPLICITLY CHANGES INPUT_DATA
@@ -96,16 +117,7 @@ def process_response_data(input_data, response_data):
     # todo should probably think about what a base file looks like, or think about what preprocessing should be
     #  done to make the code more generalized
 
-    if 'last_accessed'in input_data:
-        if len(input_data['last_accessed']) is not 0:
-            try:
-                last_accessed = dt.strptime(input_data['last_accessed'], "%d/%m/%Y")
-                delta = date.today()-last_accessed.date()
-                if delta.days < 14:
-                    return
-            except ValueError:  # sometimes the datestring might not be correct!
-                print("there's something wrong with the date recorded in last_accessed:")
-                print(input_data['last_accessed'] + " is not parsable!")
+
 
     card_data = filter_correct_card_data(input_data, response_data, parse_true(input_data['Foil?']))
     update_card_data(input_data, card_data, parse_true(input_data['Foil?']))
@@ -151,6 +163,12 @@ def manage(filename):
             print("getting... " + input_card["Name"])
             start = time.time()
 
+            if skip_because_recently_accessed(input_card):
+                print('skipping query because recently completed')
+                print("time taken for this query is (in sec):")
+                print(time.time() - start)
+                continue
+
             # get list of all editions from scryfall
             response_json = query_scryfall_for_json(input_card["Name"])
 
@@ -180,7 +198,7 @@ def manage(filename):
 
     writer.save()
 
-    auto_fit_col_width("Full collection.xlsx")
+    auto_fit_col_width(filename)
 
 
 if __name__ == "__main__":
@@ -189,7 +207,8 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--filename", help='filename', required=False)
     args = parser.parse_args()
 
-    if 'filename' not in args:
-        print('input a file name!')
+    if args.filename is None:
+        print('going with the default')
+        manage('Full collection.xlsx')
     else:
         manage(args.filename)
