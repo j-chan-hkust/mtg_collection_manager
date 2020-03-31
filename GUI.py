@@ -57,3 +57,5 @@ else:
 # todo progress bar
 # todo settings bar
 # todo add visual polish
+# todo I don't like how huge the file is
+# todo I don't like how fucking slow the boot time is
