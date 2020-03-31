@@ -147,11 +147,10 @@ def manage(filename):
 
         print(dfs[df].head())
 
-        # todo this will be an implementation of the specific case of full collection, I will make this generic in future
         input_card_df = dfs[df].fillna('')  # this converts it into list of dictionaries
         output_card_list = []
 
-        # todo turns out is not thaat slow, a query takes around 1.40s still, there is a lot of room to optimize
+        # todo turns out is not thaat slow, a query takes around 1.40s still, there is some room to optimize with threadpool
         for index, row in input_card_df.iterrows():
             input_card = row.to_dict()
 
@@ -205,6 +204,6 @@ if __name__ == "__main__":
 
     if args.filename is None:
         print('going with the default')
-        manage('Full collection.xlsx')
+        manage('full collection.xlsx')
     else:
         manage(args.filename)
