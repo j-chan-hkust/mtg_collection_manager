@@ -16,9 +16,6 @@ import requests
 # using the scryfall api
 # print out the file to an excel dock
 
-# todo add gui component that makes this applet more functional
-# todo load images into gui component
-
 
 # todo still very slow... while this ensures it doesn't break scryfalls fair use,
 #  it would be good to reduce time for these queries using threadpool
@@ -32,7 +29,7 @@ import requests
 # issues with this implementation but whatever
 def similar(a, b):
     if '//' in a or '//' in b:
-        return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.3
+        return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.5
     else:
         return SequenceMatcher(None, a.lower(), b.lower()).ratio() > 0.85
 
@@ -101,7 +98,7 @@ def skip_because_recently_accessed(input_data):
         if len(input_data['last_accessed']) is not 0:
             try:
                 last_accessed = dt.strptime(input_data['last_accessed'], "%d/%m/%Y")
-                delta = date.today()-last_accessed.date()
+                delta = date.today() - last_accessed.date()
                 if delta.days < 14:
                     return True
             except ValueError:  # sometimes the datestring might not be correct!
@@ -116,14 +113,11 @@ def skip_because_recently_accessed(input_data):
 def process_response_data(input_data, response_data):
     # todo should probably think about what a base file looks like, or think about what preprocessing should be
     #  done to make the code more generalized
-
-
-
     card_data = filter_correct_card_data(input_data, response_data, parse_true(input_data['Foil?']))
     update_card_data(input_data, card_data, parse_true(input_data['Foil?']))
 
 
-# very lazy implementation, I have no idea how it works
+# for a given filename, format columns to match content size
 def auto_fit_col_width(filename):
     dfs = pd.read_excel(filename, sheet_name=None)
     writer = pd.ExcelWriter(filename, engine='xlsxwriter')
@@ -140,6 +134,7 @@ def auto_fit_col_width(filename):
     writer.save()
 
 
+# takes a filename, and then adds information into the filename using scryfalls api
 def manage(filename):
     dfs = pd.read_excel(filename, sheet_name=None)
     writer = pd.ExcelWriter(filename, engine='xlsxwriter')
@@ -164,6 +159,8 @@ def manage(filename):
             start = time.time()
 
             if skip_because_recently_accessed(input_card):
+                full_collection_list.append(input_card)
+                output_card_list.append(input_card)
                 print('skipping query because recently completed')
                 print("time taken for this query is (in sec):")
                 print(time.time() - start)
@@ -175,6 +172,7 @@ def manage(filename):
             if response_json['object'] == 'error':
                 print("uh oh, you made a typo for card " + input_card["Name"] + ", and we can't find it!")
                 print("we've left the card as is...")
+                full_collection_list.append(input_card)
                 output_card_list.append(input_card)
                 continue
 
@@ -191,8 +189,6 @@ def manage(filename):
             print(time.time() - start)
 
         pd.DataFrame(output_card_list).to_excel(writer, sheet_name=df, index=False)
-
-
 
     pd.DataFrame(full_collection_list).to_excel(writer, sheet_name="Full Collection", index=False)
 
